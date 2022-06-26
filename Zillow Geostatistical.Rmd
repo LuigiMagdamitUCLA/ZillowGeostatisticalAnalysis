@@ -1,0 +1,97 @@
+---
+title: "Zillow Exploratory Data Analysis - Geostatistical & Spatial Analysis"
+output:
+  html_document: default
+---
+
+As the final capstone project for UCLA Statistics' Undergraduate Program, we were tasked to work with clients in performing an exploratory data analysis and performance of machine learning techniques on a dataset of their choice. 
+
+Our client asked us to perform and EDA on the selling of properties on Zillow. My personal contribution to this project was performing a spatial analysis, and visualizing how the 'Days Sold' measurement varied in its geographical location.
+
+The analysis was performed in R, with the libraries dplyr for data cleaning and data manipulation. Leaflet was used for geographical visualization. geoR was used to access geostatistical tools such as variograms, alongside other data visualization tools.
+
+We first begin with loading the data and preparing it for use in R.
+```{r}
+library("readxl")
+
+data <- read_xlsx("zillow.xlsx", col_names = FALSE, skip = 1)
+colnames(data) <- data[1,]
+head(data, n = 100)
+```
+
+Here, we performed some data cleaning and pooled the entries with the status 'RECENTLY SOLD' and 'SOLD'
+```{r}
+library(dplyr)
+
+sold <- rbind(
+data %>% filter(`Property Status` == "RECENTLY_SOLD"),
+data %>% filter(`Property Status` == "SOLD")
+)
+
+sold_numerical <- sold[,c("Price", "Year Built", "Days On Zillow")]
+
+sold_numerical <- sold_numerical %>% filter(is.na(`Year Built`) == FALSE)
+
+z <- cbind(
+  as.numeric(sold_numerical$Price),
+  as.numeric(sold_numerical$`Year Built`),
+  as.numeric(sold_numerical$`Days on Zillow`)
+)
+```
+
+As a way to visualize the data, I used the Leaflet mapping library. Each marker, when clicked, displays the days sold.
+```{r}
+library(leaflet)
+
+data <- rbind(
+data %>% filter(`Property Status` == "RECENTLY_SOLD"),
+data %>% filter(`Property Status` == "SOLD")
+)
+
+latlng <- cbind(as.numeric(data$Latitude), as.numeric(data$Longitude))
+latlng[2,]
+
+
+m <- leaflet()
+m <- addTiles(m)
+
+for(i in seq_len(100)) {
+  m <- addMarkers(m, lng=latlng[i,2], lat=latlng[i,1], popup=data$`Days On Zillow`[i])
+}
+
+m
+```
+
+In this step, I have prepared the data for use in the geoR library. I have extracted the latitude and longitude measurements from the dataset, and binded the columns together. The final column in the set is the 'Days Sold' measurement. This data table can be imagined with the latitude and longitude representing the input functions and the 'Days Sold' acting as an output measurement.
+
+```{r}
+library(geoR)
+jdc <- jitterDupCoords(latlng, max = 0.01)
+xyz <- head(data.frame(jdc, as.numeric(data$`Days On Zillow`)), n = 30000)
+#xyz <- head(data.frame(jdc, log(as.numeric(data$Price))), n = 30000)
+xyz <- xyz[-1,]
+head(xyz)
+```
+Here, I use the geoR as.geodata() function to provide a spatial analysis. We can see how the data is varied across the latitude and longitude axes. The top left graph provides a geographical shape which matches the above leaflet map. The bottom right graph provides a density graph which indicates an empirical uniform distribution.
+```{r}
+rands <- xyz[sample(nrow(xyz), 2000),]
+b <- as.geodata(rands)
+plot(b)
+```
+```{r}
+points(b, cex.min=1, cex.max=3, col="gray")
+points.geodata(b, pt.divide="quartile")
+points.geodata(b, pt.divide="quintile")
+points.geodata(b, pt.divide="equal")
+```
+\
+
+Here, I decided to perform a variogram. A variogram measures the average variance per distance. Surprisingly, the variance is nearly constant across the average distances which may indicate there is no obvious change in the 'Days Sold' as we increase geographical distance. 
+```{r}
+variogram1 <- variog(b, max.dist=900)
+plot(variogram1)
+
+variogram2 <- variog(b, dir=pi, max.dist=900, tol=pi/6)
+plot(variogram2)
+```
+
